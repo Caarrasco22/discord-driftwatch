@@ -6,12 +6,17 @@ const {
   deleteGuildData,
   createBaseline: createBaselineRecord,
   listBaselines: listBaselineRecords,
-  getLatestBaseline
+  getLatestBaseline,
+  createAuditRun,
+  finishAuditRun,
+  getLatestAuditRun,
+  insertFindings,
+  insertSkippedChecks,
+  listFindingsByRun,
+  listSkippedChecksByRun,
+  createReportMessage
 } = require('../db/database');
 const { isAuthorized } = require('../utils/auth');
-const { createId } = require('../utils/ids');
-const { nowIso } = require('../utils/time');
-const { safeName } = require('../utils/safeNames');
 const { collectBaseline } = require('../baseline/collectBaseline');
 const { compareBaseline: compareBaselineSnapshots } = require('../baseline/compareBaseline');
 const { enforceBaselineRetention } = require('../baseline/baselineRetention');
@@ -163,41 +168,25 @@ async function compareBaseline(interaction) {
   const currentSnapshot = await collectBaseline(interaction.guild);
   const comparison = compareBaselineSnapshots(latest.snapshot, currentSnapshot);
   const riskScore = calculateRiskScore(comparison.findings);
-  const runId = createId('run');
-  const startedAt = nowIso();
-  const finishedAt = nowIso();
+  const run = createAuditRun(interaction.guildId, {
+    baselineId: latest.baselineId,
+    runType: 'baseline-compare',
+    status: 'running',
+    createdById: interaction.user.id,
+    createdByName: interaction.user.tag || interaction.user.username
+  });
 
-  getDb().prepare(`
-    INSERT INTO audit_runs (
-      run_id, guild_id, baseline_id, run_type, status, risk_score, summary_json,
-      started_at, finished_at, created_by_id, created_by_name
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    runId,
-    interaction.guildId,
-    latest.baselineId,
-    'baseline-compare',
-    'completed',
+  insertFindings(interaction.guildId, run.runId, comparison.findings, latest.baselineId);
+  insertSkippedChecks(interaction.guildId, run.runId, comparison.skippedChecks);
+  const finishedRun = finishAuditRun(interaction.guildId, run.runId, {
+    status: 'completed',
     riskScore,
-    JSON.stringify({
+    summary: {
       heuristic: true,
       findingCount: comparison.findings.length,
       skippedCheckCount: comparison.skippedChecks.length
-    }),
-    startedAt,
-    finishedAt,
-    interaction.user.id,
-    safeName(interaction.user.tag || interaction.user.username)
-  );
-
-  for (const finding of comparison.findings) {
-    insertFinding({ guildId: interaction.guildId, runId, baselineId: latest.baselineId, finding });
-  }
-
-  for (const skippedCheck of comparison.skippedChecks) {
-    insertSkippedCheck({ guildId: interaction.guildId, runId, skippedCheck });
-  }
+    }
+  });
 
   const topFindings = comparison.findings
     .slice(0, 5)
@@ -216,7 +205,7 @@ async function compareBaseline(interaction) {
       { name: 'Top findings', value: topFindings.slice(0, 1024), inline: false }
     )
     .setFooter({ text: 'Driftwatch v0.1 heuristic comparison - safeToAutoFix is false' })
-    .setTimestamp(new Date(finishedAt));
+    .setTimestamp(new Date(finishedRun.finishedAt));
 
   if (comparison.skippedChecks.length > 0) {
     embed.addFields({
@@ -237,69 +226,36 @@ async function handleCheck(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   getGuildConfig(interaction.guildId);
-  const runId = createId('run');
-  const startedAt = nowIso();
   const currentRisk = evaluateCurrentRisk(interaction.guild);
   const findings = currentRisk.findings;
   const riskScore = calculateRiskScore(findings);
-  const finishedAt = nowIso();
+  const run = createAuditRun(interaction.guildId, {
+    runType: 'current-risk',
+    status: 'running',
+    createdById: interaction.user.id,
+    createdByName: interaction.user.tag || interaction.user.username
+  });
 
-  const db = getDb();
-  db.prepare(`
-    INSERT INTO audit_runs (
-      run_id, guild_id, run_type, status, risk_score, summary_json,
-      started_at, finished_at, created_by_id, created_by_name
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    runId,
-    interaction.guildId,
-    'current-risk',
-    'completed',
+  insertFindings(interaction.guildId, run.runId, findings);
+  insertSkippedChecks(interaction.guildId, run.runId, currentRisk.skippedChecks);
+  const finishedRun = finishAuditRun(interaction.guildId, run.runId, {
+    status: 'completed',
     riskScore,
-    JSON.stringify({
+    summary: {
       heuristic: true,
       findingCount: findings.length,
       skippedCheckCount: currentRisk.skippedChecks.length
-    }),
-    startedAt,
-    finishedAt,
-    interaction.user.id,
-    safeName(interaction.user.tag || interaction.user.username)
-  );
-
-  for (const finding of findings) {
-    insertFinding({ guildId: interaction.guildId, runId, finding });
-  }
-
-  for (const skippedCheck of currentRisk.skippedChecks) {
-    insertSkippedCheck({ guildId: interaction.guildId, runId, skippedCheck });
-  }
+    }
+  });
 
   const embed = buildReportEmbed({
     title: 'Driftwatch Current Risk',
     riskScore,
     findings,
+    skippedChecks: currentRisk.skippedChecks,
+    run: finishedRun,
     summary: currentRisk.summary
   });
-
-  embed.addFields({
-    name: 'Skipped checks',
-    value: String(currentRisk.skippedChecks.length),
-    inline: true
-  });
-
-  if (currentRisk.skippedChecks.length > 0) {
-    embed.addFields({
-      name: 'Limitations',
-      value: currentRisk.skippedChecks
-        .slice(0, 3)
-        .map((item) => `- ${item.reason}`)
-        .join('\n')
-        .slice(0, 1024),
-      inline: false
-    });
-  }
 
   await interaction.editReply({ embeds: [embed] });
 }
@@ -324,17 +280,10 @@ async function handleImpact(interaction) {
 }
 
 async function handleReport(interaction) {
-  const db = getDb();
   const guildConfig = getGuildConfig(interaction.guildId);
-  const row = db.prepare(`
-    SELECT run_id, baseline_id, run_type, status, risk_score, summary_json, started_at, finished_at
-    FROM audit_runs
-    WHERE guild_id = ?
-    ORDER BY started_at DESC
-    LIMIT 1
-  `).get(interaction.guildId);
+  const latestRun = getLatestAuditRun(interaction.guildId);
 
-  if (!row) {
+  if (!latestRun) {
     await interaction.reply({
       content: 'No report is available yet. Run `/driftwatch check` or `/driftwatch baseline action:compare` first.',
       ephemeral: true
@@ -342,52 +291,22 @@ async function handleReport(interaction) {
     return;
   }
 
-  const findingRows = db.prepare(`
-    SELECT *
-    FROM findings
-    WHERE guild_id = ? AND run_id = ?
-    ORDER BY created_at ASC
-  `).all(interaction.guildId, row.run_id);
-  const skippedRows = db.prepare(`
-    SELECT check_name, reason, missing_permission, created_at
-    FROM skipped_checks
-    WHERE guild_id = ? AND run_id = ?
-    ORDER BY created_at ASC
-  `).all(interaction.guildId, row.run_id);
-
-  const findings = findingRows.map(rowToFinding);
-  const skippedChecks = skippedRows.map((skipped) => ({
-    checkName: skipped.check_name,
-    reason: skipped.reason,
-    missingPermission: skipped.missing_permission,
-    createdAt: skipped.created_at
-  }));
-  const run = {
-    runId: row.run_id,
-    baselineId: row.baseline_id,
-    runType: row.run_type,
-    status: row.status,
-    riskScore: row.risk_score,
-    startedAt: row.started_at,
-    finishedAt: row.finished_at
-  };
+  const findings = listFindingsByRun(interaction.guildId, latestRun.runId);
+  const skippedChecks = listSkippedChecksByRun(interaction.guildId, latestRun.runId);
 
   const embed = buildReportEmbed({
     title: 'Driftwatch Report',
-    riskScore: row.risk_score ?? calculateRiskScore(findings),
+    riskScore: latestRun.riskScore ?? calculateRiskScore(findings),
     findings,
     skippedChecks,
-    run,
-    summary: `Latest ${row.run_type} run for this guild. Status: ${row.status}.`
+    run: latestRun,
+    summary: `Latest ${latestRun.runType} run for this guild. Status: ${latestRun.status}.`
   });
 
   const configuredChannel = guildConfig.report_channel_id && interaction.guild.channels.cache.get(guildConfig.report_channel_id);
   if (configuredChannel && configuredChannel.isTextBased()) {
     const message = await configuredChannel.send({ embeds: [embed] });
-    db.prepare(`
-      INSERT INTO report_messages (guild_id, run_id, channel_id, message_id, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(interaction.guildId, row.run_id, configuredChannel.id, message.id, nowIso());
+    createReportMessage(interaction.guildId, latestRun.runId, configuredChannel.id, message.id);
 
     await interaction.reply({
       content: `Report sent to ${configuredChannel}.`,
@@ -449,88 +368,6 @@ async function handleHelp(interaction) {
     ].join('\n'),
     ephemeral: true
   });
-}
-
-function insertFinding({ guildId, runId, baselineId = null, finding }) {
-  getDb().prepare(`
-    INSERT INTO findings (
-      finding_id, guild_id, run_id, baseline_id, rule_id, severity, category,
-      title, asset_type, asset_id, asset_name, previous_value, current_value,
-      actor_id, actor_name, impact, likelihood, evidence_json, recommendation,
-      confidence, remediation_difficulty, safe_to_auto_fix, created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    finding.id,
-    guildId,
-    runId,
-    baselineId,
-    finding.ruleId,
-    finding.severity,
-    finding.category,
-    finding.title,
-    finding.assetType,
-    finding.assetId,
-    finding.assetName,
-    finding.previousValue,
-    finding.currentValue,
-    finding.actorId,
-    finding.actorName,
-    finding.impact,
-    finding.likelihood,
-    JSON.stringify(finding.evidence),
-    finding.recommendation,
-    finding.confidence,
-    finding.remediationDifficulty,
-    0,
-    finding.createdAt
-  );
-}
-
-function insertSkippedCheck({ guildId, runId, skippedCheck }) {
-  getDb().prepare(`
-    INSERT INTO skipped_checks (guild_id, run_id, check_name, reason, missing_permission, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    guildId,
-    runId,
-    skippedCheck.checkName || 'baseline_compare',
-    skippedCheck.reason || 'Check skipped because required data was not safely available.',
-    skippedCheck.missingPermission || null,
-    nowIso()
-  );
-}
-
-function rowToFinding(row) {
-  let evidence = [];
-  try {
-    evidence = JSON.parse(row.evidence_json || '[]');
-  } catch (error) {
-    evidence = [];
-  }
-
-  return {
-    id: row.finding_id,
-    ruleId: row.rule_id,
-    severity: row.severity,
-    category: row.category,
-    title: row.title,
-    assetType: row.asset_type,
-    assetId: row.asset_id,
-    assetName: row.asset_name,
-    previousValue: row.previous_value,
-    currentValue: row.current_value,
-    actorId: row.actor_id,
-    actorName: row.actor_name,
-    impact: row.impact,
-    likelihood: row.likelihood,
-    evidence,
-    recommendation: row.recommendation,
-    confidence: row.confidence,
-    remediationDifficulty: row.remediation_difficulty,
-    safeToAutoFix: Boolean(row.safe_to_auto_fix),
-    createdAt: row.created_at
-  };
 }
 
 module.exports = { execute };
