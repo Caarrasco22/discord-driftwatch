@@ -6,57 +6,67 @@ Driftwatch te ayuda a detectar cuándo tu servidor de Discord ya no es tan segur
 
 ## Short Description
 
-Discord Driftwatch is a source-available Discord security auditing bot for authorized defensive server administration. It is designed to help server owners and administrators review configuration drift, risky permissions, role exposure, bot access, webhooks, invites, audit log signals, and actionable security findings.
+Discord Driftwatch is a source-available Discord security auditing bot for authorized defensive administration. It focuses on configuration drift, risky permissions, role and channel exposure, bot access, webhooks, invites, audit log signals, and actionable reports.
 
 ### Resumen en español
 
-Driftwatch no reemplaza a los bots de moderación. Su objetivo es comprobar si la configuración real de seguridad del servidor sigue coincidiendo con lo que el propietario o los administradores creen que está configurado.
+En pocas palabras: Driftwatch no intenta moderar tu servidor ni sustituir a otros bots. Su objetivo es revisar si la configuración real de seguridad sigue coincidiendo con lo que el owner/admin cree que tiene configurado.
 
 ## Status
 
 Driftwatch is in early v0.1 scaffolding:
 
 - A runnable bot skeleton exists.
-- The `/driftwatch` slash command structure exists.
+- The `/driftwatch` command structure exists.
 - SQLite initialization exists.
-- Some modules are placeholders.
+- A basic sanitized baseline snapshot exists.
+- Drift, logs, impact, and reports are still placeholder or early modules.
 - Full audit logic is not complete yet.
 
 ### Nota en español
 
 Ahora mismo esto es una base técnica limpia para seguir construyendo, no un producto terminado.
 
-## What Problem It Solves
+## Why Driftwatch Exists
 
-Discord servers change over time. Staff roles are edited, bots are added, channels are reorganized, permissions are changed, and old invites or webhooks may remain active. Driftwatch focuses on detecting security-relevant configuration drift, such as:
+Discord security often drifts slowly. A server may look stable from the outside while important security assumptions quietly change:
 
-- Roles gaining dangerous permissions.
-- Bots getting too much access.
-- Staff channels becoming visible.
-- Webhooks appearing.
-- Invites without limits.
-- Many admin actions in a short time.
+- A role gains one dangerous permission.
+- A bot gets too much access.
+- A staff channel becomes visible.
+- A webhook appears in a sensitive channel.
+- An invite has no limits.
+- Many admin actions happen in a short time.
+
+### Explicación en español
+
+El valor de Driftwatch no está en hacer moderación automática, sino en detectar cambios y riesgos que un admin puede no ver a tiempo.
 
 ## What Driftwatch Is Not
 
 - Not a traditional anti-raid bot.
 - Not a general moderation bot.
 - Not an offensive security tool.
-- Not a spam, phishing, or token tool.
+- Not a spam, phishing, or token theft tool.
 - Not a selfbot.
-- Not a replacement for AutoMod, Wick, Dyno, Carl-bot, or similar tools.
+- Not a replacement for AutoMod, Wick, Dyno, Carl-bot, or similar moderation bots.
 - Does not use user tokens.
-- Does not try to bypass rate limits.
+- Does not try to bypass Discord rate limits.
+- Does not automatically modify the server in v0.1.
 
-## Current v0.1 Scaffold Capabilities
+### Nota en español
 
-- Registers the `/driftwatch` slash command.
-- Initializes a local SQLite database.
-- Provides setup, data, delete-data, and help command flow.
-- Can create basic sanitized baselines from cached guild configuration.
-- Has placeholder modules for drift, current risk, logs, impact, and reports.
+La idea es auditoría defensiva autorizada, no abuso ni automatización agresiva.
+
+## Current Scaffold Capabilities
+
+- Registers `/driftwatch`.
+- Initializes local SQLite storage.
+- Provides setup, baseline, check, logs, impact, report, data, delete-data, and help command flow.
+- Can create a basic sanitized baseline from cached guild configuration.
+- Has placeholder modules for drift detection, current risk, log intelligence, impact analysis, and reports.
 - Has a simple heuristic risk score engine.
-- Has source structure prepared for future modules.
+- Has documentation, privacy, security, and restricted-use licensing files.
 
 ## Planned v0.1 Scope
 
@@ -70,6 +80,10 @@ Discord servers change over time. Staff roles are edited, bots are added, channe
 - Data deletion.
 - Minimal permissions.
 - Bilingual text structure.
+
+### Resumen en español
+
+Para la v0.1 el objetivo no es hacer un bot gigante, sino una herramienta pequeña, segura y útil que detecte riesgos reales.
 
 ## Commands
 
@@ -85,7 +99,7 @@ Discord servers change over time. Staff roles are edited, bots are added, channe
 /driftwatch help
 ```
 
-Sensitive commands require the guild owner, Administrator permission, Manage Server permission, or a configured authorized role. The `delete-data` command requires explicit confirmation before local guild data is deleted.
+Sensitive commands require the guild owner, Administrator permission, Manage Server permission, or a configured authorized role. `/driftwatch delete-data` requires explicit confirmation before local guild data is deleted.
 
 ## Permissions
 
@@ -152,7 +166,7 @@ npm run deploy-commands
 npm start
 ```
 
-Windows users may need Git Bash or WSL for the shell scripts. They can also run the npm commands manually.
+On Windows, use Git Bash or WSL for shell scripts, or run the npm commands manually. `.env` must be filled before deploying commands or starting the bot.
 
 ## Environment Variables
 
@@ -216,10 +230,12 @@ Future:
 
 ## License
 
-Driftwatch is source-available with restricted use. It is not open source. It is for authorized defensive use only.
+Driftwatch is source-available and restricted-use. It is not open source. It is for authorized defensive use only.
+
+The license does not permit raids, spam, phishing, token theft, selfbots, rate-limit evasion, unauthorized actions, resale, or SaaS use without permission.
 
 See [LICENSE.md](LICENSE.md) for the full license terms.
 
 ## Disclaimer
 
-You are responsible for complying with the Discord Developer Terms, Discord Developer Policy, applicable laws, hosting rules, and the rules of any server where Driftwatch is installed. Only use Driftwatch for authorized defensive auditing.
+Users are responsible for complying with the Discord Developer Terms, Discord Developer Policy, applicable laws, hosting rules, and the rules of any server where Driftwatch is installed. Only use Driftwatch for authorized defensive auditing.
