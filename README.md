@@ -6,11 +6,13 @@ Driftwatch te ayuda a detectar cuándo tu servidor de Discord ya no es tan segur
 
 ## Short Description
 
-Discord Driftwatch is a source-available Discord security auditing bot for authorized defensive administration. It focuses on configuration drift, risky permissions, role and channel exposure, bot access, webhooks, invites, audit log signals, and actionable reports.
+Discord Driftwatch is a source-available Discord security auditing bot for authorized defensive administration. It focuses on configuration drift, risky permissions, permission exposure, role and channel exposure, bot access, webhooks, invites, audit log intelligence, risk signals, and actionable reports.
+
+In short, Driftwatch is designed as a defensive security auditing tool for Discord. Its goal is to help owners and administrators detect security drift, dangerous permissions, critical changes, unnecessary exposure, and early risk signals inside their servers. v0.1 starts with a safe and focused foundation, but the long-term vision is to evolve into a stronger security analysis tool for Discord communities.
 
 ### Resumen en español
 
-En pocas palabras: Driftwatch no intenta moderar tu servidor ni sustituir a otros bots. Su objetivo es revisar si la configuración real de seguridad sigue coincidiendo con lo que el owner/admin cree que tiene configurado.
+En pocas palabras: Driftwatch está diseñado como una herramienta de auditoría defensiva para Discord. Su objetivo es ayudar a owners y administradores a detectar desviaciones de seguridad, permisos peligrosos, cambios críticos, exposición innecesaria y señales tempranas de riesgo dentro del servidor. La v0.1 empieza con una base sencilla y segura, pero la visión del proyecto es crecer hacia una solución más completa de análisis de seguridad para comunidades Discord.
 
 ## Status
 
@@ -29,7 +31,7 @@ Ahora mismo esto es una base técnica limpia para seguir construyendo, no un pro
 
 ## Why Driftwatch Exists
 
-Discord security often drifts slowly. A server may look stable from the outside while important security assumptions quietly change:
+Discord security often drifts slowly. A server may look stable from the outside while important security assumptions quietly change. Driftwatch exists to give administrators a clearer view of their server's security posture and to turn configuration changes into reviewable, actionable security context:
 
 - A role gains one dangerous permission.
 - A bot gets too much access.
@@ -40,7 +42,7 @@ Discord security often drifts slowly. A server may look stable from the outside 
 
 ### Explicación en español
 
-El valor de Driftwatch no está en hacer moderación automática, sino en detectar cambios y riesgos que un admin puede no ver a tiempo.
+El valor de Driftwatch no está en hacer moderación automática, sino en aportar visibilidad de seguridad: detectar cambios críticos, exposición de permisos y señales de riesgo que un admin puede no ver a tiempo.
 
 ## What Driftwatch Is Not
 
@@ -83,7 +85,7 @@ La idea es auditoría defensiva autorizada, no abuso ni automatización agresiva
 
 ### Resumen en español
 
-Para la v0.1 el objetivo no es hacer un bot gigante, sino una herramienta pequeña, segura y útil que detecte riesgos reales.
+Para la v0.1 el objetivo es construir una base segura, clara y verificable: una primera versión realista que pueda crecer hacia una plataforma más completa de análisis de seguridad para comunidades Discord.
 
 ## Commands
 
