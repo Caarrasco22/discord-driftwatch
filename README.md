@@ -75,6 +75,34 @@ La idea es auditoría defensiva autorizada, no abuso ni automatización agresiva
 - Has a simple heuristic risk score engine.
 - Has documentation, privacy, security, and restricted-use licensing files.
 
+## Screenshots / Capturas
+
+These screenshots show the current v0.1 Discord test flow. They are examples of the scaffolded baseline, current-risk, comparison, and report experience. Audit log analysis and impact analysis are still placeholder areas.
+
+### Help command
+
+![Driftwatch help command](docs/screenshots/driftwatch-help.png)
+
+### Local data and retention summary
+
+![Driftwatch data command](docs/screenshots/driftwatch-data.png)
+
+### Baseline creation
+
+![Driftwatch baseline creation](docs/screenshots/driftwatch-baseline-created.png)
+
+### Current risk check
+
+![Driftwatch current risk report](docs/screenshots/driftwatch-current-risk.png)
+
+### Baseline comparison
+
+![Driftwatch baseline comparison](docs/screenshots/driftwatch-baseline-compare.png)
+
+### Latest report
+
+![Driftwatch latest report](docs/screenshots/driftwatch-report.png)
+
 ## Planned v0.1 Scope
 
 - Baseline create, list, and compare.
