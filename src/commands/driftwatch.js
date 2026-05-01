@@ -1,16 +1,25 @@
-const { getDb, getGuildConfig, upsertGuildConfig, deleteGuildData } = require('../db/database');
+const { EmbedBuilder } = require('discord.js');
+const {
+  getDb,
+  getGuildConfig,
+  upsertGuildConfig,
+  deleteGuildData,
+  createBaseline: createBaselineRecord,
+  listBaselines: listBaselineRecords,
+  getLatestBaseline
+} = require('../db/database');
 const { isAuthorized } = require('../utils/auth');
 const { createId } = require('../utils/ids');
 const { nowIso } = require('../utils/time');
 const { safeName } = require('../utils/safeNames');
 const { collectBaseline } = require('../baseline/collectBaseline');
-const { serializeBaseline } = require('../baseline/serializeBaseline');
+const { compareBaseline: compareBaselineSnapshots } = require('../baseline/compareBaseline');
 const { enforceBaselineRetention } = require('../baseline/baselineRetention');
 const { evaluateCurrentRisk } = require('../engines/currentRiskEngine');
 const { calculateRiskScore } = require('../engines/riskScoreEngine');
 const { estimateImpact } = require('../engines/impactEngine');
 const { runLogsAudit } = require('../audits/logsAudit');
-const { buildReportEmbed } = require('../reports/reportEmbeds');
+const { buildReportEmbed, summarizeSeverities } = require('../reports/reportEmbeds');
 const en = require('../i18n/en');
 
 const publicSubcommands = new Set(['help']);
@@ -58,69 +67,170 @@ async function handleBaseline(interaction) {
   const action = interaction.options.getString('action', true);
   if (action === 'create') return createBaseline(interaction);
   if (action === 'list') return listBaselines(interaction);
-
-  await interaction.reply({
-    content: 'Baseline comparison is scaffolded for v0.1. No configuration changes were made.',
-    ephemeral: true
-  });
+  return compareBaseline(interaction);
 }
 
 async function createBaseline(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
-  getGuildConfig(interaction.guildId);
+  const config = getGuildConfig(interaction.guildId);
   const snapshot = await collectBaseline(interaction.guild);
-  const baselineId = createId('baseline');
-  const createdAt = nowIso();
-
-  getDb().prepare(`
-    INSERT INTO baselines (
-      baseline_id, guild_id, label, snapshot_json, schema_version,
-      created_by_id, created_by_name, created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    baselineId,
+  const created = createBaselineRecord(
     interaction.guildId,
-    `Baseline ${createdAt}`,
-    serializeBaseline(snapshot),
-    1,
-    interaction.user.id,
-    safeName(interaction.user.tag || interaction.user.username),
-    createdAt
+    snapshot,
+    {
+      createdById: interaction.user.id,
+      createdByName: interaction.user.tag || interaction.user.username,
+      createdAt: snapshot.createdAt
+    }
   );
+  const retention = enforceBaselineRetention(interaction.guildId);
+  const skippedCount = snapshot.skippedChecks.length;
 
-  enforceBaselineRetention(interaction.guildId);
+  const embed = new EmbedBuilder()
+    .setTitle('Baseline Created')
+    .setDescription('A sanitized server configuration baseline was stored locally. No messages, DMs, user tokens, emails, passwords, IP addresses, or raw audit logs were collected.')
+    .addFields(
+      { name: 'Baseline ID', value: created.baselineId, inline: false },
+      { name: 'Roles', value: String(snapshot.roles.length), inline: true },
+      { name: 'Channels', value: String(snapshot.channels.length), inline: true },
+      { name: 'Visible bot members', value: String(snapshot.botMembersVisibleFromCache.length), inline: true },
+      { name: 'Skipped checks', value: String(skippedCount), inline: true },
+      { name: 'Retention', value: `Keeping latest ${retention.maxBaselines} baseline(s). Removed ${retention.deleted} old baseline(s).`, inline: false }
+    )
+    .setFooter({ text: `Guild max baselines: ${config.max_baselines || 5}` })
+    .setTimestamp(new Date(created.createdAt));
 
-  await interaction.editReply({
-    content: [
-      'Baseline created from cached guild configuration.',
-      `Baseline ID: ${baselineId}`,
-      `Roles captured: ${snapshot.roles.length}`,
-      `Channels captured: ${snapshot.channels.length}`,
-      'No messages, DMs, tokens, passwords, or IP addresses were collected.'
-    ].join('\n')
-  });
+  if (skippedCount > 0) {
+    embed.addFields({
+      name: 'Collection limitations',
+      value: snapshot.skippedChecks
+        .slice(0, 3)
+        .map((item) => `- ${item.reason}`)
+        .join('\n')
+        .slice(0, 1024),
+      inline: false
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function listBaselines(interaction) {
-  const rows = getDb().prepare(`
-    SELECT baseline_id, label, created_at
-    FROM baselines
-    WHERE guild_id = ?
-    ORDER BY created_at DESC
-    LIMIT 10
-  `).all(interaction.guildId);
+  const rows = listBaselineRecords(interaction.guildId, 10);
 
   if (rows.length === 0) {
     await interaction.reply({ content: 'No baselines found for this server yet.', ephemeral: true });
     return;
   }
 
+  const embed = new EmbedBuilder()
+    .setTitle('Stored Baselines')
+    .setDescription('Latest baselines stored locally for this guild.')
+    .setTimestamp(new Date());
+
+  for (const row of rows.slice(0, 10)) {
+    const shortId = row.baselineId.length > 18 ? `${row.baselineId.slice(0, 18)}...` : row.baselineId;
+    const creator = row.createdByName || 'unknown';
+    const createdAt = row.createdAt || 'unknown date';
+    embed.addFields({
+      name: row.label || shortId,
+      value: [
+        `ID: ${shortId}`,
+        `Created: ${createdAt}`,
+        `Creator: ${creator}`,
+        `Roles: ${row.roleCount} | Channels: ${row.channelCount} | Skipped: ${row.skippedCheckCount}`
+      ].join('\n').slice(0, 1024),
+      inline: false
+    });
+  }
+
   await interaction.reply({
-    content: rows.map((row) => `- ${row.baseline_id} | ${row.label || 'unlabeled'} | ${row.created_at}`).join('\n'),
+    embeds: [embed],
     ephemeral: true
   });
+}
+
+async function compareBaseline(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const latest = getLatestBaseline(interaction.guildId);
+  if (!latest || !latest.snapshot || latest.snapshot.parseError) {
+    await interaction.editReply('No usable baseline found for this server yet. Create one with `/driftwatch baseline action:create` first.');
+    return;
+  }
+
+  const currentSnapshot = await collectBaseline(interaction.guild);
+  const comparison = compareBaselineSnapshots(latest.snapshot, currentSnapshot);
+  const riskScore = calculateRiskScore(comparison.findings);
+  const runId = createId('run');
+  const startedAt = nowIso();
+  const finishedAt = nowIso();
+
+  getDb().prepare(`
+    INSERT INTO audit_runs (
+      run_id, guild_id, baseline_id, run_type, status, risk_score, summary_json,
+      started_at, finished_at, created_by_id, created_by_name
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    runId,
+    interaction.guildId,
+    latest.baselineId,
+    'baseline-compare',
+    'completed',
+    riskScore,
+    JSON.stringify({
+      heuristic: true,
+      findingCount: comparison.findings.length,
+      skippedCheckCount: comparison.skippedChecks.length
+    }),
+    startedAt,
+    finishedAt,
+    interaction.user.id,
+    safeName(interaction.user.tag || interaction.user.username)
+  );
+
+  for (const finding of comparison.findings) {
+    insertFinding({ guildId: interaction.guildId, runId, baselineId: latest.baselineId, finding });
+  }
+
+  for (const skippedCheck of comparison.skippedChecks) {
+    insertSkippedCheck({ guildId: interaction.guildId, runId, skippedCheck });
+  }
+
+  const topFindings = comparison.findings
+    .slice(0, 5)
+    .map((finding) => `**${finding.severity.toUpperCase()}** ${finding.title}`)
+    .join('\n') || 'No baseline drift findings detected by the v0.1 heuristic comparison.';
+
+  const embed = new EmbedBuilder()
+    .setTitle('Baseline Comparison')
+    .setDescription('v0.1 heuristic comparison against the latest stored baseline. No server configuration was changed.')
+    .addFields(
+      { name: 'Baseline used', value: `${latest.label || latest.baselineId}\n${latest.createdAt}`, inline: false },
+      { name: 'Risk score', value: String(riskScore), inline: true },
+      { name: 'Total findings', value: String(comparison.findings.length), inline: true },
+      { name: 'Skipped checks', value: String(comparison.skippedChecks.length), inline: true },
+      { name: 'Severity summary', value: summarizeSeverities(comparison.findings), inline: false },
+      { name: 'Top findings', value: topFindings.slice(0, 1024), inline: false }
+    )
+    .setFooter({ text: 'Driftwatch v0.1 heuristic comparison - safeToAutoFix is false' })
+    .setTimestamp(new Date(finishedAt));
+
+  if (comparison.skippedChecks.length > 0) {
+    embed.addFields({
+      name: 'Limitations',
+      value: comparison.skippedChecks
+        .slice(0, 3)
+        .map((item) => `- ${item.reason}`)
+        .join('\n')
+        .slice(0, 1024),
+      inline: false
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function handleCheck(interaction) {
@@ -129,7 +239,8 @@ async function handleCheck(interaction) {
   getGuildConfig(interaction.guildId);
   const runId = createId('run');
   const startedAt = nowIso();
-  const findings = evaluateCurrentRisk(interaction.guild);
+  const currentRisk = evaluateCurrentRisk(interaction.guild);
+  const findings = currentRisk.findings;
   const riskScore = calculateRiskScore(findings);
   const finishedAt = nowIso();
 
@@ -146,7 +257,11 @@ async function handleCheck(interaction) {
     'current-risk',
     'completed',
     riskScore,
-    JSON.stringify({ placeholder: true, findingCount: findings.length }),
+    JSON.stringify({
+      heuristic: true,
+      findingCount: findings.length,
+      skippedCheckCount: currentRisk.skippedChecks.length
+    }),
     startedAt,
     finishedAt,
     interaction.user.id,
@@ -157,12 +272,34 @@ async function handleCheck(interaction) {
     insertFinding({ guildId: interaction.guildId, runId, finding });
   }
 
+  for (const skippedCheck of currentRisk.skippedChecks) {
+    insertSkippedCheck({ guildId: interaction.guildId, runId, skippedCheck });
+  }
+
   const embed = buildReportEmbed({
     title: 'Driftwatch Current Risk',
     riskScore,
     findings,
-    summary: 'Safe v0.1 placeholder run completed. No server configuration was changed.'
+    summary: currentRisk.summary
   });
+
+  embed.addFields({
+    name: 'Skipped checks',
+    value: String(currentRisk.skippedChecks.length),
+    inline: true
+  });
+
+  if (currentRisk.skippedChecks.length > 0) {
+    embed.addFields({
+      name: 'Limitations',
+      value: currentRisk.skippedChecks
+        .slice(0, 3)
+        .map((item) => `- ${item.reason}`)
+        .join('\n')
+        .slice(0, 1024),
+      inline: false
+    });
+  }
 
   await interaction.editReply({ embeds: [embed] });
 }
@@ -187,8 +324,10 @@ async function handleImpact(interaction) {
 }
 
 async function handleReport(interaction) {
-  const row = getDb().prepare(`
-    SELECT run_id, risk_score, status, finished_at
+  const db = getDb();
+  const guildConfig = getGuildConfig(interaction.guildId);
+  const row = db.prepare(`
+    SELECT run_id, baseline_id, run_type, status, risk_score, summary_json, started_at, finished_at
     FROM audit_runs
     WHERE guild_id = ?
     ORDER BY started_at DESC
@@ -196,14 +335,68 @@ async function handleReport(interaction) {
   `).get(interaction.guildId);
 
   if (!row) {
-    await interaction.reply({ content: 'No report is available yet. Run `/driftwatch check` first.', ephemeral: true });
+    await interaction.reply({
+      content: 'No report is available yet. Run `/driftwatch check` or `/driftwatch baseline action:compare` first.',
+      ephemeral: true
+    });
     return;
   }
 
-  await interaction.reply({
-    content: `Latest run: ${row.run_id}\nStatus: ${row.status}\nRisk score: ${row.risk_score ?? 'n/a'}\nFinished: ${row.finished_at || 'n/a'}`,
-    ephemeral: true
+  const findingRows = db.prepare(`
+    SELECT *
+    FROM findings
+    WHERE guild_id = ? AND run_id = ?
+    ORDER BY created_at ASC
+  `).all(interaction.guildId, row.run_id);
+  const skippedRows = db.prepare(`
+    SELECT check_name, reason, missing_permission, created_at
+    FROM skipped_checks
+    WHERE guild_id = ? AND run_id = ?
+    ORDER BY created_at ASC
+  `).all(interaction.guildId, row.run_id);
+
+  const findings = findingRows.map(rowToFinding);
+  const skippedChecks = skippedRows.map((skipped) => ({
+    checkName: skipped.check_name,
+    reason: skipped.reason,
+    missingPermission: skipped.missing_permission,
+    createdAt: skipped.created_at
+  }));
+  const run = {
+    runId: row.run_id,
+    baselineId: row.baseline_id,
+    runType: row.run_type,
+    status: row.status,
+    riskScore: row.risk_score,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at
+  };
+
+  const embed = buildReportEmbed({
+    title: 'Driftwatch Report',
+    riskScore: row.risk_score ?? calculateRiskScore(findings),
+    findings,
+    skippedChecks,
+    run,
+    summary: `Latest ${row.run_type} run for this guild. Status: ${row.status}.`
   });
+
+  const configuredChannel = guildConfig.report_channel_id && interaction.guild.channels.cache.get(guildConfig.report_channel_id);
+  if (configuredChannel && configuredChannel.isTextBased()) {
+    const message = await configuredChannel.send({ embeds: [embed] });
+    db.prepare(`
+      INSERT INTO report_messages (guild_id, run_id, channel_id, message_id, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(interaction.guildId, row.run_id, configuredChannel.id, message.id, nowIso());
+
+    await interaction.reply({
+      content: `Report sent to ${configuredChannel}.`,
+      ephemeral: true
+    });
+    return;
+  }
+
+  await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function handleData(interaction) {
@@ -247,7 +440,7 @@ async function handleHelp(interaction) {
     content: [
       '`/driftwatch setup` - initialize server config',
       '`/driftwatch baseline action:create|list|compare` - manage baselines',
-      '`/driftwatch check` - run safe placeholder current-risk check',
+      '`/driftwatch check` - run v0.1 current-risk checks',
       '`/driftwatch logs days limit` - placeholder audit log analysis',
       '`/driftwatch impact` - placeholder impact analysis',
       '`/driftwatch report` - show latest run status',
@@ -258,7 +451,7 @@ async function handleHelp(interaction) {
   });
 }
 
-function insertFinding({ guildId, runId, finding }) {
+function insertFinding({ guildId, runId, baselineId = null, finding }) {
   getDb().prepare(`
     INSERT INTO findings (
       finding_id, guild_id, run_id, baseline_id, rule_id, severity, category,
@@ -271,7 +464,7 @@ function insertFinding({ guildId, runId, finding }) {
     finding.id,
     guildId,
     runId,
-    null,
+    baselineId,
     finding.ruleId,
     finding.severity,
     finding.category,
@@ -292,6 +485,52 @@ function insertFinding({ guildId, runId, finding }) {
     0,
     finding.createdAt
   );
+}
+
+function insertSkippedCheck({ guildId, runId, skippedCheck }) {
+  getDb().prepare(`
+    INSERT INTO skipped_checks (guild_id, run_id, check_name, reason, missing_permission, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    guildId,
+    runId,
+    skippedCheck.checkName || 'baseline_compare',
+    skippedCheck.reason || 'Check skipped because required data was not safely available.',
+    skippedCheck.missingPermission || null,
+    nowIso()
+  );
+}
+
+function rowToFinding(row) {
+  let evidence = [];
+  try {
+    evidence = JSON.parse(row.evidence_json || '[]');
+  } catch (error) {
+    evidence = [];
+  }
+
+  return {
+    id: row.finding_id,
+    ruleId: row.rule_id,
+    severity: row.severity,
+    category: row.category,
+    title: row.title,
+    assetType: row.asset_type,
+    assetId: row.asset_id,
+    assetName: row.asset_name,
+    previousValue: row.previous_value,
+    currentValue: row.current_value,
+    actorId: row.actor_id,
+    actorName: row.actor_name,
+    impact: row.impact,
+    likelihood: row.likelihood,
+    evidence,
+    recommendation: row.recommendation,
+    confidence: row.confidence,
+    remediationDifficulty: row.remediation_difficulty,
+    safeToAutoFix: Boolean(row.safe_to_auto_fix),
+    createdAt: row.created_at
+  };
 }
 
 module.exports = { execute };

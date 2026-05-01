@@ -22,7 +22,9 @@ Driftwatch is in early v0.1 scaffolding:
 - The `/driftwatch` command structure exists.
 - SQLite initialization exists.
 - A basic sanitized baseline snapshot exists.
-- Drift, logs, impact, and reports are still placeholder or early modules.
+- Basic baseline comparison exists.
+- Basic current risk checks exist.
+- Broader drift, logs, impact, and reports are still placeholder or early modules.
 - Full audit logic is not complete yet.
 
 ### Nota en español
@@ -66,14 +68,17 @@ La idea es auditoría defensiva autorizada, no abuso ni automatización agresiva
 - Initializes local SQLite storage.
 - Provides setup, baseline, check, logs, impact, report, data, delete-data, and help command flow.
 - Can create a basic sanitized baseline from cached guild configuration.
-- Has placeholder modules for drift detection, current risk, log intelligence, impact analysis, and reports.
+- Can compare the latest baseline against the current cached guild configuration with v0.1 heuristic findings.
+- Can run v0.1 current risk checks for dangerous role permissions, @everyone exposure, managed roles, and sensitive-looking channel overwrites.
+- Can build Discord embed reports from the latest audit run findings.
+- Has placeholder modules for broader drift detection, log intelligence, and impact analysis.
 - Has a simple heuristic risk score engine.
 - Has documentation, privacy, security, and restricted-use licensing files.
 
 ## Planned v0.1 Scope
 
 - Baseline create, list, and compare.
-- Current risk detection.
+- Continue improving current risk detection.
 - Drift detection.
 - Audit log analysis.
 - Impact analysis for roles and bots.
@@ -206,8 +211,8 @@ src/utils/
 
 v0.1:
 
-- Complete baseline create, list, and compare.
-- Implement current risk checks.
+- Continue improving baseline create, list, and compare.
+- Continue improving current risk checks.
 - Implement drift checks.
 - Implement audit log analysis.
 - Implement impact analysis for roles and bots.

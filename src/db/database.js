@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { nowIso } = require('../utils/time');
+const { createId } = require('../utils/ids');
+const { safeName } = require('../utils/safeNames');
 
 const defaultDatabasePath = path.resolve(process.cwd(), 'data', 'driftwatch.sqlite');
 let db;
@@ -93,10 +95,102 @@ function deleteGuildData(guildId) {
   transaction();
 }
 
+function createBaseline(guildId, snapshot, options = {}) {
+  const database = getDb();
+  const baselineId = options.baselineId || createId('baseline');
+  const createdAt = options.createdAt || snapshot.createdAt || snapshot.collectedAt || nowIso();
+  const label = options.label || `Baseline ${createdAt}`;
+
+  database.prepare(`
+    INSERT INTO baselines (
+      baseline_id, guild_id, label, snapshot_json, schema_version,
+      created_by_id, created_by_name, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    baselineId,
+    guildId,
+    label,
+    JSON.stringify(snapshot),
+    snapshot.schemaVersion || 1,
+    options.createdById || null,
+    options.createdByName ? safeName(options.createdByName) : null,
+    createdAt
+  );
+
+  return {
+    baselineId,
+    label,
+    createdAt,
+    snapshot
+  };
+}
+
+function listBaselines(guildId, limit = 10) {
+  return getDb().prepare(`
+    SELECT baseline_id, label, snapshot_json, schema_version, created_by_id, created_by_name, created_at
+    FROM baselines
+    WHERE guild_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(guildId, limit).map((row) => {
+    let snapshot = {};
+    try {
+      snapshot = JSON.parse(row.snapshot_json);
+    } catch (error) {
+      snapshot = { parseError: true };
+    }
+
+    return {
+      baselineId: row.baseline_id,
+      label: row.label,
+      schemaVersion: row.schema_version,
+      createdById: row.created_by_id,
+      createdByName: row.created_by_name,
+      createdAt: row.created_at,
+      roleCount: Array.isArray(snapshot.roles) ? snapshot.roles.length : 0,
+      channelCount: Array.isArray(snapshot.channels) ? snapshot.channels.length : 0,
+      skippedCheckCount: Array.isArray(snapshot.skippedChecks) ? snapshot.skippedChecks.length : 0
+    };
+  });
+}
+
+function getLatestBaseline(guildId) {
+  const row = getDb().prepare(`
+    SELECT baseline_id, label, snapshot_json, schema_version, created_by_id, created_by_name, created_at
+    FROM baselines
+    WHERE guild_id = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(guildId);
+
+  if (!row) return null;
+
+  let snapshot = {};
+  try {
+    snapshot = JSON.parse(row.snapshot_json);
+  } catch (error) {
+    snapshot = { parseError: true };
+  }
+
+  return {
+    baselineId: row.baseline_id,
+    label: row.label,
+    schemaVersion: row.schema_version,
+    createdById: row.created_by_id,
+    createdByName: row.created_by_name,
+    createdAt: row.created_at,
+    snapshot
+  };
+}
+
 module.exports = {
   initDatabase,
   getDb,
   getGuildConfig,
   upsertGuildConfig,
-  deleteGuildData
+  deleteGuildData,
+  createBaseline,
+  listBaselines,
+  getLatestBaseline
 };
