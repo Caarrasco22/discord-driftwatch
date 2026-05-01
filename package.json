@@ -1,0 +1,25 @@
+{
+  "name": "discord-driftwatch",
+  "version": "0.1.0",
+  "description": "Source-available Discord security auditing bot for authorized defensive server administration.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy-commands": "node src/deploy-commands.js",
+    "dev": "node src/index.js"
+  },
+  "keywords": [
+    "discord",
+    "security",
+    "audit",
+    "defensive"
+  ],
+  "license": "SEE LICENSE.md",
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "uuid": "^14.0.0"
+  }
+}
