@@ -252,7 +252,20 @@ function getAuditRun(guildId, runId) {
   return row ? rowToAuditRun(row) : null;
 }
 
-function getLatestAuditRun(guildId) {
+function getLatestAuditRun(guildId, runType = null) {
+  if (runType) {
+    const typedRow = getDb().prepare(`
+      SELECT run_id, guild_id, baseline_id, run_type, status, risk_score, summary_json,
+        started_at, finished_at, created_by_id, created_by_name
+      FROM audit_runs
+      WHERE guild_id = ? AND run_type = ?
+      ORDER BY started_at DESC
+      LIMIT 1
+    `).get(guildId, runType);
+
+    return typedRow ? rowToAuditRun(typedRow) : null;
+  }
+
   const row = getDb().prepare(`
     SELECT run_id, guild_id, baseline_id, run_type, status, risk_score, summary_json,
       started_at, finished_at, created_by_id, created_by_name

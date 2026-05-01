@@ -281,11 +281,19 @@ async function handleImpact(interaction) {
 
 async function handleReport(interaction) {
   const guildConfig = getGuildConfig(interaction.guildId);
-  const latestRun = getLatestAuditRun(interaction.guildId);
+  const source = interaction.options.getString('source') || 'latest';
+  const runType = source === 'latest' ? null : source;
+  const latestRun = getLatestAuditRun(interaction.guildId, runType);
 
   if (!latestRun) {
+    const nextCommand = source === 'current-risk'
+      ? '`/driftwatch check`'
+      : source === 'baseline-compare'
+        ? '`/driftwatch baseline action:compare`'
+        : '`/driftwatch check` or `/driftwatch baseline action:compare`';
+
     await interaction.reply({
-      content: 'No report is available yet. Run `/driftwatch check` or `/driftwatch baseline action:compare` first.',
+      content: `No ${source} report is available yet. Run ${nextCommand} first.`,
       ephemeral: true
     });
     return;
@@ -295,11 +303,12 @@ async function handleReport(interaction) {
   const skippedChecks = listSkippedChecksByRun(interaction.guildId, latestRun.runId);
 
   const embed = buildReportEmbed({
-    title: 'Driftwatch Report',
+    title: reportTitleForRunType(latestRun.runType),
     riskScore: latestRun.riskScore ?? calculateRiskScore(findings),
     findings,
     skippedChecks,
     run: latestRun,
+    language: guildConfig.language || process.env.DEFAULT_LANGUAGE || 'en',
     summary: `Latest ${latestRun.runType} run for this guild. Status: ${latestRun.status}.`
   });
 
@@ -316,6 +325,12 @@ async function handleReport(interaction) {
   }
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+function reportTitleForRunType(runType) {
+  if (runType === 'current-risk') return 'Driftwatch Current Risk Report';
+  if (runType === 'baseline-compare') return 'Driftwatch Baseline Comparison Report';
+  return 'Driftwatch Report';
 }
 
 async function handleData(interaction) {
@@ -362,7 +377,7 @@ async function handleHelp(interaction) {
       '`/driftwatch check` - run v0.1 current-risk checks',
       '`/driftwatch logs days limit` - placeholder audit log analysis',
       '`/driftwatch impact` - placeholder impact analysis',
-      '`/driftwatch report` - show latest run status',
+      '`/driftwatch report source:latest|current-risk|baseline-compare` - show stored report findings',
       '`/driftwatch data` - explain local data and retention',
       "`/driftwatch delete-data confirm:true` - delete this guild's local Driftwatch data"
     ].join('\n'),

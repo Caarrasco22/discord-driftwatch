@@ -29,7 +29,7 @@ const command = new SlashCommandBuilder()
   .addSubcommand((subcommand) =>
     subcommand
       .setName('check')
-      .setDescription('Run a safe placeholder current-risk check')
+      .setDescription('Run v0.1 current-risk checks')
   )
   .addSubcommand((subcommand) =>
     subcommand
@@ -58,7 +58,17 @@ const command = new SlashCommandBuilder()
   .addSubcommand((subcommand) =>
     subcommand
       .setName('report')
-      .setDescription('Show the latest placeholder report status')
+      .setDescription('Show a Driftwatch report from stored audit findings')
+      .addStringOption((option) =>
+        option
+          .setName('source')
+          .setDescription('Which audit run source to report')
+          .addChoices(
+            { name: 'latest', value: 'latest' },
+            { name: 'current-risk', value: 'current-risk' },
+            { name: 'baseline-compare', value: 'baseline-compare' }
+          )
+      )
   )
   .addSubcommand((subcommand) =>
     subcommand

@@ -1,9 +1,10 @@
 const { EmbedBuilder } = require('discord.js');
 const { formatFinding, severityLabels } = require('./findingFormatter');
+const { getMessages } = require('../i18n');
 
 const severityOrder = ['critical', 'high', 'medium', 'low', 'info'];
 
-function summarizeSeverities(findings = []) {
+function summarizeSeverities(findings = [], messages = getMessages('en')) {
   const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const finding of findings) {
     if (Object.prototype.hasOwnProperty.call(counts, finding.severity)) {
@@ -29,24 +30,32 @@ function buildReportEmbed({
   findings = [],
   summary,
   run,
-  skippedChecks = []
+  skippedChecks = [],
+  language = 'en'
 }) {
+  const messages = getMessages(language);
   const sortedFindings = sortFindingsBySeverity(findings);
-  const topFindings = sortedFindings.slice(0, 6).map(formatFinding).join('\n') || 'No findings were recorded for this run.';
-  const recommendations = topRecommendations(sortedFindings);
+  const topFindings = sortedFindings.slice(0, 6).map(formatFinding).join('\n') || messages.reportNotes.noFindings;
+  const recommendations = topRecommendations(sortedFindings, messages);
+  const runType = run && run.runType ? run.runType : 'unknown';
+  const runNote = runType === 'current-risk'
+    ? messages.reportNotes.currentRisk
+    : runType === 'baseline-compare'
+      ? messages.reportNotes.baselineCompare
+      : messages.reportNotes.heuristic;
 
   const embed = new EmbedBuilder()
     .setTitle(title)
-    .setDescription(summary || 'Authorized defensive audit report.')
+    .setDescription([summary || 'Authorized defensive audit report.', runNote].join('\n\n'))
     .addFields(
-      { name: 'Risk score', value: String(riskScore), inline: true },
-      { name: 'Run type', value: run && run.runType ? run.runType : 'unknown', inline: true },
-      { name: 'Timestamp', value: run && (run.finishedAt || run.startedAt) ? (run.finishedAt || run.startedAt) : 'unknown', inline: false },
-      { name: 'Severity summary', value: summarizeSeverities(sortedFindings), inline: false },
-      { name: `Top findings (${Math.min(sortedFindings.length, 6)} of ${sortedFindings.length})`, value: topFindings.slice(0, 1024), inline: false },
-      { name: 'Top recommendations', value: recommendations.slice(0, 1024), inline: false },
-      { name: 'Skipped checks', value: summarizeSkippedChecks(skippedChecks), inline: false },
-      { name: 'v0.1 note', value: 'This report uses heuristic checks and cached Discord configuration data. It is a triage aid, not a guarantee of complete security coverage.', inline: false }
+      { name: messages.reportLabels.riskScore, value: String(riskScore), inline: true },
+      { name: messages.reportLabels.runType, value: runType, inline: true },
+      { name: messages.reportLabels.timestamp, value: run && (run.finishedAt || run.startedAt) ? (run.finishedAt || run.startedAt) : 'unknown', inline: false },
+      { name: messages.reportLabels.severitySummary, value: summarizeSeverities(sortedFindings, messages), inline: false },
+      { name: `${messages.reportLabels.topFindings} (${Math.min(sortedFindings.length, 6)} of ${sortedFindings.length})`, value: topFindings.slice(0, 1024), inline: false },
+      { name: messages.reportLabels.topRecommendations, value: recommendations.slice(0, 1024), inline: false },
+      { name: messages.reportLabels.skippedChecks, value: summarizeSkippedChecks(skippedChecks, messages), inline: false },
+      { name: messages.reportLabels.v01Note, value: messages.reportNotes.heuristic, inline: false }
     )
     .setFooter({ text: 'Driftwatch v0.1 report - safeToAutoFix is false' })
     .setTimestamp(run && (run.finishedAt || run.startedAt) ? new Date(run.finishedAt || run.startedAt) : new Date());
@@ -54,7 +63,7 @@ function buildReportEmbed({
   return embed;
 }
 
-function topRecommendations(findings) {
+function topRecommendations(findings, messages = getMessages('en')) {
   const seen = new Set();
   const lines = [];
 
@@ -65,11 +74,11 @@ function topRecommendations(findings) {
     if (lines.length >= 4) break;
   }
 
-  return lines.join('\n') || 'No recommendations were recorded for this run.';
+  return lines.join('\n') || messages.reportNotes.noRecommendations;
 }
 
-function summarizeSkippedChecks(skippedChecks = []) {
-  if (skippedChecks.length === 0) return 'None recorded.';
+function summarizeSkippedChecks(skippedChecks = [], messages = getMessages('en')) {
+  if (skippedChecks.length === 0) return messages.reportNotes.noSkippedChecks;
   return skippedChecks
     .slice(0, 4)
     .map((item) => `- ${item.checkName || item.check_name}: ${item.reason}`)

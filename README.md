@@ -108,6 +108,8 @@ Para la v0.1 el objetivo es construir una base segura, clara y verificable: una 
 
 Sensitive commands require the guild owner, Administrator permission, Manage Server permission, or a configured authorized role. `/driftwatch delete-data` requires explicit confirmation before local guild data is deleted.
 
+`/driftwatch report` supports `source:latest`, `source:current-risk`, and `source:baseline-compare` so administrators can choose which stored audit run type to summarize.
+
 ## Permissions
 
 Minimum permissions:

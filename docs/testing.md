@@ -95,7 +95,9 @@ npm run deploy-commands
 /driftwatch baseline action:list
 /driftwatch check
 /driftwatch baseline action:compare
-/driftwatch report
+/driftwatch report source:latest
+/driftwatch report source:current-risk
+/driftwatch report source:baseline-compare
 /driftwatch delete-data confirm:false
 ```
 
@@ -167,7 +169,9 @@ npm run deploy-commands
 - [ ] `/driftwatch baseline action:list` lists baselines.
 - [ ] `/driftwatch check` returns a risk summary.
 - [ ] `/driftwatch baseline action:compare` returns a comparison summary.
-- [ ] `/driftwatch report` returns or sends the latest report.
+- [ ] `/driftwatch report source:latest` returns or sends the latest report.
+- [ ] `/driftwatch report source:current-risk` returns or sends the latest current-risk report.
+- [ ] `/driftwatch report source:baseline-compare` returns or sends the latest baseline comparison report.
 - [ ] `/driftwatch delete-data confirm:false` does not delete data.
 - [ ] No message content is read.
 - [ ] No server configuration is modified.

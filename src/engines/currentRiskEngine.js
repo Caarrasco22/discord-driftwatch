@@ -20,6 +20,7 @@ const dangerousPermissions = [
 
 const highRiskPermissions = new Set(['ManageRoles', 'ManageGuild', 'ManageChannels', 'ManageWebhooks']);
 const moderationRiskPermissions = new Set(['BanMembers', 'KickMembers', 'MentionEveryone']);
+const mediumRiskPermissions = new Set(['ManageMessages', 'ManageEvents', 'ManageThreads']);
 const sensitiveChannelPattern = /\b(staff|mod|admin|logs?|audit|private|ticket|soporte|moderacion|moderación|administracion|administración)\b/i;
 
 function evaluateCurrentRisk(guild) {
@@ -85,7 +86,7 @@ function evaluateEveryone(guild, findings) {
 
     findings.push(createFinding({
       ruleId: `current.everyone.${permissionName}.present`,
-      severity: Severity.CRITICAL,
+      severity: severityForEveryonePermission(permissionName),
       category: Categories.PERMISSIONS,
       title: `@everyone has ${permissionName}`,
       assetType: 'role',
@@ -93,10 +94,10 @@ function evaluateEveryone(guild, findings) {
       assetName: '@everyone',
       previousValue: null,
       currentValue: everyone.permissions.bitfield.toString(),
-      impact: `${permissionName} on @everyone affects the broadest possible role and can expose the entire server to unnecessary risk.`,
-      likelihood: 'high',
+      impact: `${permissionName} on @everyone affects the broadest possible role and should be reviewed carefully.`,
+      likelihood: highRiskPermissions.has(permissionName) || permissionName === 'Administrator' ? 'high' : 'medium',
       evidence: [`@everyone currently includes ${permissionName}.`],
-      recommendation: 'Remove broad dangerous permissions from @everyone unless there is a clearly documented and authorized reason.',
+      recommendation: 'Review @everyone permissions and keep broad permissions disabled unless there is a clearly documented administrative reason.',
       confidence: 0.95
     }));
   }
@@ -155,10 +156,18 @@ function evaluateChannels(guild, findings) {
 }
 
 function severityForRolePermission(permissionName, managed) {
-  if (permissionName === 'Administrator') return Severity.CRITICAL;
+  if (permissionName === 'Administrator') return managed ? Severity.HIGH : Severity.CRITICAL;
   if (managed && highRiskPermissions.has(permissionName)) return Severity.HIGH;
   if (highRiskPermissions.has(permissionName)) return Severity.HIGH;
-  if (moderationRiskPermissions.has(permissionName)) return Severity.MEDIUM;
+  if (moderationRiskPermissions.has(permissionName)) return Severity.HIGH;
+  if (mediumRiskPermissions.has(permissionName)) return managed ? Severity.HIGH : Severity.MEDIUM;
+  return Severity.MEDIUM;
+}
+
+function severityForEveryonePermission(permissionName) {
+  if (permissionName === 'Administrator') return Severity.CRITICAL;
+  if (highRiskPermissions.has(permissionName)) return Severity.CRITICAL;
+  if (moderationRiskPermissions.has(permissionName)) return Severity.HIGH;
   return Severity.MEDIUM;
 }
 
