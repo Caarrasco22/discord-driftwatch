@@ -175,6 +175,8 @@ npm start
 
 On Windows, use Git Bash or WSL for shell scripts, or run the npm commands manually. `.env` must be filled before deploying commands or starting the bot.
 
+Before using Driftwatch on any important server, test the v0.1 flow in a private Discord server. See [docs/testing.md](docs/testing.md).
+
 ## Environment Variables
 
 ```text
