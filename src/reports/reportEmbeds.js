@@ -42,7 +42,9 @@ function buildReportEmbed({
     ? messages.reportNotes.currentRisk
     : runType === 'baseline-compare'
       ? messages.reportNotes.baselineCompare
-      : messages.reportNotes.heuristic;
+      : runType === 'logs'
+        ? messages.reportNotes.logs
+        : messages.reportNotes.heuristic;
 
   const embed = new EmbedBuilder()
     .setTitle(title)

@@ -34,7 +34,7 @@ const command = new SlashCommandBuilder()
   .addSubcommand((subcommand) =>
     subcommand
       .setName('logs')
-      .setDescription('Run a safe placeholder audit log analysis')
+      .setDescription('Run safe v0.1 audit log analysis')
       .addIntegerOption((option) =>
         option
           .setName('days')
@@ -66,7 +66,8 @@ const command = new SlashCommandBuilder()
           .addChoices(
             { name: 'latest', value: 'latest' },
             { name: 'current-risk', value: 'current-risk' },
-            { name: 'baseline-compare', value: 'baseline-compare' }
+            { name: 'baseline-compare', value: 'baseline-compare' },
+            { name: 'logs', value: 'logs' }
           )
       )
   )

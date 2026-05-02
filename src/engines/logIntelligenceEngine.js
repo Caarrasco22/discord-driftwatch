@@ -37,6 +37,28 @@ const adminActionNames = new Set([
 ]);
 
 const destructiveActionNames = new Set(['RoleDelete', 'ChannelDelete']);
+const highRiskActionNames = new Set([
+  'GuildUpdate',
+  'RoleUpdate',
+  'RoleDelete',
+  'ChannelDelete',
+  'WebhookCreate',
+  'WebhookDelete',
+  'MemberBanAdd',
+  'MemberKick'
+]);
+const webhookActionNames = new Set(['WebhookCreate', 'WebhookUpdate', 'WebhookDelete']);
+const inviteActionNames = new Set(['InviteCreate', 'InviteDelete']);
+const channelPermissionActionNames = new Set(['ChannelOverwriteCreate', 'ChannelOverwriteUpdate', 'ChannelOverwriteDelete']);
+const guildConfigActionNames = new Set(['GuildUpdate']);
+const automodActionNames = new Set([
+  'AutoModerationRuleCreate',
+  'AutoModerationRuleUpdate',
+  'AutoModerationRuleDelete',
+  'AutoModerationBlockMessage',
+  'AutoModerationFlagToChannel',
+  'AutoModerationUserCommunicationDisabled'
+]);
 
 async function analyzeAuditLogs(options = {}) {
   const guild = options.guild;
@@ -65,14 +87,17 @@ async function analyzeAuditLogs(options = {}) {
 
   const fetched = await fetchRecentAuditLogEntries(guild, { limit, cutoff, skippedChecks, limitations, language });
   const entries = fetched.entries;
+  const classifiedEntries = entries.map(classifyEntry);
+  const actorSummary = buildActorSummary(classifiedEntries);
   const findings = [];
   const permissionLimitations = [];
 
-  findings.push(...detectConcentratedAdminActivity(entries, language));
-  findings.push(...detectDestructiveBursts(entries, language));
-  findings.push(...detectWebhookCreates(entries, language));
-  findings.push(...detectInviteCreates(entries, language));
-  findings.push(...detectRolePermissionGains(entries, language, permissionLimitations));
+  findings.push(...detectConcentratedAdminActivity(classifiedEntries, language));
+  findings.push(...detectHighRiskBursts(classifiedEntries, language));
+  findings.push(...detectDestructiveBursts(classifiedEntries, language));
+  findings.push(...detectWebhookCreates(classifiedEntries, language));
+  findings.push(...detectInviteCreates(classifiedEntries, language));
+  findings.push(...detectRolePermissionGains(classifiedEntries, language, permissionLimitations));
 
   for (const limitation of permissionLimitations.slice(0, 5)) {
     skippedChecks.push({
@@ -81,14 +106,17 @@ async function analyzeAuditLogs(options = {}) {
     });
   }
 
+  limitations.push(...defaultLimitations(language));
+
   const summary = buildSummary({ days, limit, fetched, findings, skippedChecks, language });
 
   return {
     summary,
     findings,
     skippedChecks,
-    notableEvents: buildNotableTimeline(entries, language),
-    topActors: buildTopActors(entries),
+    notableEvents: buildNotableTimeline(classifiedEntries, language),
+    topActors: actorSummary.slice(0, 5),
+    actorSummary,
     limitations,
     stats: {
       days,
@@ -163,7 +191,7 @@ async function fetchRecentAuditLogEntries(guild, { limit, cutoff, skippedChecks,
 
 function detectConcentratedAdminActivity(entries, language) {
   const findings = [];
-  const byActor = groupByActor(entries.filter((entry) => adminActionNames.has(actionName(entry.action))));
+  const byActor = groupByActor(entries.filter((entry) => entry.classification.isRelevantAdminAction));
 
   for (const [actorId, actorEntries] of byActor) {
     const window = firstWindow(actorEntries, 5, TEN_MINUTES_MS);
@@ -194,9 +222,42 @@ function detectConcentratedAdminActivity(entries, language) {
   return findings;
 }
 
+function detectHighRiskBursts(entries, language) {
+  const findings = [];
+  const byActor = groupByActor(entries.filter((entry) => entry.classification.isHighRiskAction));
+
+  for (const [actorId, actorEntries] of byActor) {
+    const window = firstWindow(actorEntries, 3, 15 * 60 * 1000);
+    if (!window) continue;
+    const actorName = safeActorName(window[0]);
+    findings.push(createFinding({
+      ruleId: 'logs-high-risk-activity-burst',
+      severity: Severity.HIGH,
+      category: Categories.LOGS,
+      title: text(language, 'Cambios sensibles concentrados por un actor', 'Concentrated high-risk changes by one actor'),
+      assetType: 'audit-log',
+      assetId: actorId,
+      assetName: actorName,
+      actorId,
+      actorName,
+      impact: text(language, 'Varias acciones sensibles aparecen concentradas en una ventana corta. Puede ser mantenimiento legítimo, pero conviene revisar la secuencia.', 'Several sensitive actions appear concentrated in a short window. It may be legitimate maintenance, but the sequence should be reviewed.'),
+      likelihood: 'medium',
+      evidence: [
+        { type: 'timeWindow', value: '15 minutes' },
+        { type: 'count', value: window.length },
+        { type: 'actions', value: compactActionCounts(window) }
+      ],
+      recommendation: text(language, 'Revisa la secuencia de cambios de ese actor en el audit log de Discord y confirma que estaban previstos.', 'Review this actor sequence in Discord audit logs and confirm the changes were expected.'),
+      confidence: 0.76
+    }));
+  }
+
+  return findings;
+}
+
 function detectDestructiveBursts(entries, language) {
   const findings = [];
-  const destructive = entries.filter((entry) => destructiveActionNames.has(actionName(entry.action)));
+  const destructive = entries.filter((entry) => entry.classification.isDestructiveAction);
   const byActor = groupByActor(destructive);
 
   for (const [actorId, actorEntries] of byActor) {
@@ -230,7 +291,7 @@ function detectDestructiveBursts(entries, language) {
 
 function detectWebhookCreates(entries, language) {
   return entries
-    .filter((entry) => actionName(entry.action) === 'WebhookCreate')
+    .filter((entry) => entry.actionName === 'WebhookCreate')
     .slice(0, 10)
     .map((entry) => createFinding({
       ruleId: 'logs-webhook-created',
@@ -249,14 +310,14 @@ function detectWebhookCreates(entries, language) {
         { type: 'target', value: targetName(entry) || targetId(entry) || 'unknown' },
         { type: 'createdAt', value: createdAtIso(entry) }
       ],
-      recommendation: text(language, 'Verifica que el webhook fue creado para un uso autorizado y elimina manualmente los que no sean necesarios.', 'Verify the webhook was created for an authorized use and manually remove any that are not needed.'),
+      recommendation: text(language, 'Revisa que el webhook sea esperado y limita quién puede gestionar webhooks.', 'Review whether the webhook is expected and limit who can manage webhooks.'),
       confidence: 0.82
     }));
 }
 
 function detectInviteCreates(entries, language) {
   return entries
-    .filter((entry) => actionName(entry.action) === 'InviteCreate')
+    .filter((entry) => entry.actionName === 'InviteCreate')
     .slice(0, 10)
     .map((entry) => {
       const inviteData = readInviteData(entry);
@@ -286,7 +347,7 @@ function detectInviteCreates(entries, language) {
           { type: 'maxAge', value: inviteData.maxAge ?? 'unknown' },
           ...(limitation ? [{ type: 'limitation', value: limitation }] : [])
         ],
-        recommendation: text(language, 'Revisa las invitaciones activas y limita usos o expiración cuando sea apropiado.', 'Review active invites and limit uses or expiration where appropriate.'),
+        recommendation: text(language, 'Revisa invitaciones recientes y elimina las que no sean necesarias.', 'Review recent invites and remove those that are not needed.'),
         confidence: inviteData.available ? 0.72 : 0.55
       });
     });
@@ -294,7 +355,7 @@ function detectInviteCreates(entries, language) {
 
 function detectRolePermissionGains(entries, language, limitations) {
   const findings = [];
-  const roleUpdates = entries.filter((entry) => actionName(entry.action) === 'RoleUpdate');
+  const roleUpdates = entries.filter((entry) => entry.classification.isRolePermissionAction);
 
   for (const entry of roleUpdates) {
     const permissionChange = readPermissionChange(entry);
@@ -325,7 +386,7 @@ function detectRolePermissionGains(entries, language, limitations) {
           { type: 'permissionGained', value: permission.name },
           { type: 'target', value: targetName(entry) || targetId(entry) || 'unknown' }
         ],
-        recommendation: text(language, 'Confirma si el permiso era necesario y aplica mínimo privilegio cuando sea posible.', 'Confirm whether the permission was needed and apply least privilege where possible.'),
+        recommendation: text(language, 'Revisa el rol afectado y confirma que esos permisos siguen siendo necesarios.', 'Review the affected role and confirm those permissions are still needed.'),
         confidence: 0.86
       }));
     }
@@ -394,6 +455,7 @@ function emptyResult(days, limit, language, skippedCheck) {
     skippedChecks: [skippedCheck],
     notableEvents: [],
     topActors: [],
+    actorSummary: [],
     limitations: [skippedCheck.reason],
     stats: {
       days,
@@ -407,42 +469,96 @@ function emptyResult(days, limit, language, skippedCheck) {
   };
 }
 
-function buildTopActors(entries) {
-  const counts = new Map();
-  for (const entry of entries.filter((item) => adminActionNames.has(actionName(item.action)))) {
-    const actorId = entry.executorId || 'unknown';
-    const current = counts.get(actorId) || {
-      actorId,
-      actorName: safeActorName(entry),
-      count: 0,
-      actions: {}
-    };
-    current.count += 1;
-    const name = actionName(entry.action);
-    current.actions[name] = (current.actions[name] || 0) + 1;
-    counts.set(actorId, current);
-  }
-  return Array.from(counts.values()).sort((a, b) => b.count - a.count).slice(0, 5);
+function classifyEntry(entry) {
+  const name = actionName(entry.action);
+  const permissionChange = readPermissionChange(entry);
+  const isRoleUpdate = name === 'RoleUpdate';
+
+  return {
+    ...entry,
+    actionName: name,
+    classification: {
+      isRelevantAdminAction: adminActionNames.has(name) || channelPermissionActionNames.has(name) || automodActionNames.has(name),
+      isHighRiskAction: highRiskActionNames.has(name) || gainedDangerousPermissionsFromChange(permissionChange).length > 0,
+      isDestructiveAction: destructiveActionNames.has(name),
+      isWebhookAction: webhookActionNames.has(name),
+      isInviteAction: inviteActionNames.has(name),
+      isRolePermissionAction: isRoleUpdate && Boolean(permissionChange),
+      isChannelPermissionAction: channelPermissionActionNames.has(name),
+      isGuildConfigAction: guildConfigActionNames.has(name),
+      isAutomodAction: automodActionNames.has(name)
+    },
+    derivedPermissionChange: permissionChange
+  };
 }
 
-function buildNotableTimeline(entries) {
-  const notableNames = new Set([
-    'WebhookCreate',
-    'InviteCreate',
-    'RoleUpdate',
-    'RoleDelete',
-    'ChannelDelete',
-    'GuildUpdate'
-  ]);
+function buildActorSummary(entries) {
+  const summaries = new Map();
+  for (const entry of entries.filter((item) => item.classification.isRelevantAdminAction)) {
+    const actorId = entry.executorId || 'unknown';
+    const current = summaries.get(actorId) || {
+      actorId,
+      actorName: safeActorName(entry),
+      totalRelevantActions: 0,
+      highRiskActions: 0,
+      destructiveActions: 0,
+      webhookActions: 0,
+      inviteActions: 0,
+      rolePermissionActions: 0,
+      firstSeen: createdAtIso(entry),
+      lastSeen: createdAtIso(entry)
+    };
+
+    current.totalRelevantActions += 1;
+    if (entry.classification.isHighRiskAction) current.highRiskActions += 1;
+    if (entry.classification.isDestructiveAction) current.destructiveActions += 1;
+    if (entry.classification.isWebhookAction) current.webhookActions += 1;
+    if (entry.classification.isInviteAction) current.inviteActions += 1;
+    if (entry.classification.isRolePermissionAction) current.rolePermissionActions += 1;
+
+    if (entry.createdTimestamp < new Date(current.firstSeen).getTime()) {
+      current.firstSeen = createdAtIso(entry);
+    }
+    if (entry.createdTimestamp > new Date(current.lastSeen).getTime()) {
+      current.lastSeen = createdAtIso(entry);
+    }
+
+    summaries.set(actorId, current);
+  }
+
+  return Array.from(summaries.values()).sort((a, b) => {
+    if (b.highRiskActions !== a.highRiskActions) return b.highRiskActions - a.highRiskActions;
+    if (b.destructiveActions !== a.destructiveActions) return b.destructiveActions - a.destructiveActions;
+    if (b.totalRelevantActions !== a.totalRelevantActions) return b.totalRelevantActions - a.totalRelevantActions;
+    return new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime();
+  });
+}
+
+function buildNotableTimeline(entries, language) {
   return entries
-    .filter((entry) => notableNames.has(actionName(entry.action)))
+    .filter((entry) => entry.classification.isHighRiskAction || entry.classification.isDestructiveAction || entry.classification.isWebhookAction || entry.classification.isInviteAction || entry.classification.isGuildConfigAction || entry.classification.isChannelPermissionAction)
+    .sort((a, b) => {
+      const severityDiff = timelinePriority(b) - timelinePriority(a);
+      if (severityDiff !== 0) return severityDiff;
+      return b.createdTimestamp - a.createdTimestamp;
+    })
     .slice(0, 8)
     .map((entry) => ({
-      action: actionName(entry.action),
+      action: entry.actionName,
+      label: actionLabel(entry.actionName, language),
       actorName: safeActorName(entry),
-      targetName: targetName(entry),
+      targetName: targetName(entry) || targetId(entry) || text(language, 'objetivo no disponible', 'target unavailable'),
       createdAt: createdAtIso(entry)
     }));
+}
+
+function timelinePriority(entry) {
+  if (entry.actionName === 'RoleUpdate' && gainedDangerousPermissionsFromChange(entry.derivedPermissionChange).some((item) => item.name === 'Administrator')) return 5;
+  if (entry.classification.isHighRiskAction) return 4;
+  if (entry.classification.isDestructiveAction) return 3;
+  if (entry.classification.isWebhookAction) return 2;
+  if (entry.classification.isInviteAction) return 1;
+  return 0;
 }
 
 function groupByActor(entries) {
@@ -471,10 +587,52 @@ function firstWindow(entries, threshold, windowMs) {
 function compactActionCounts(entries) {
   const counts = {};
   for (const entry of entries) {
-    const name = actionName(entry.action);
+    const name = entry.actionName || actionName(entry.action);
     counts[name] = (counts[name] || 0) + 1;
   }
   return counts;
+}
+
+function gainedDangerousPermissionsFromChange(permissionChange) {
+  if (!permissionChange || !permissionChange.parseable) return [];
+  return gainedDangerousPermissions(permissionChange.oldBits, permissionChange.newBits);
+}
+
+function defaultLimitations(language) {
+  return [
+    text(language, 'Los datos del registro de auditoría dependen de la disponibilidad y retención de Discord.', 'Audit log data depends on Discord availability and retention.'),
+    text(language, 'Algunos detalles de cambios pueden no estar expuestos o no ser interpretables de forma segura.', 'Some change details may not be exposed or safely parseable.'),
+    text(language, 'Driftwatch v0.1 no prueba compromiso; solo muestra señales para revisión autorizada.', 'Driftwatch v0.1 does not prove compromise; it only highlights signals for authorized review.'),
+    text(language, 'Driftwatch v0.1 no modifica la configuración del servidor.', 'Driftwatch v0.1 does not modify server configuration.'),
+    text(language, 'Solo se almacenan hallazgos derivados, resúmenes y comprobaciones omitidas.', 'Only derived findings, summaries, and skipped checks are stored.')
+  ];
+}
+
+function actionLabel(name, language) {
+  if (language !== 'es') return name;
+  const labels = {
+    GuildUpdate: 'Servidor actualizado',
+    ChannelCreate: 'Canal creado',
+    ChannelUpdate: 'Canal actualizado',
+    ChannelDelete: 'Canal eliminado',
+    RoleCreate: 'Rol creado',
+    RoleUpdate: 'Rol actualizado',
+    RoleDelete: 'Rol eliminado',
+    WebhookCreate: 'Webhook creado',
+    WebhookUpdate: 'Webhook actualizado',
+    WebhookDelete: 'Webhook eliminado',
+    InviteCreate: 'Invitación creada',
+    InviteDelete: 'Invitación eliminada',
+    MemberBanAdd: 'Ban registrado',
+    MemberKick: 'Expulsión registrada',
+    ChannelOverwriteCreate: 'Permiso de canal creado',
+    ChannelOverwriteUpdate: 'Permiso de canal actualizado',
+    ChannelOverwriteDelete: 'Permiso de canal eliminado',
+    AutoModerationRuleCreate: 'Regla AutoMod creada',
+    AutoModerationRuleUpdate: 'Regla AutoMod actualizada',
+    AutoModerationRuleDelete: 'Regla AutoMod eliminada'
+  };
+  return labels[name] || name;
 }
 
 function actionName(action) {
