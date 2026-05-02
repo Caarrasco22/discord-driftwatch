@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/index.js",
     "deploy-commands": "node src/deploy-commands.js",
-    "dev": "node src/index.js"
+    "dev": "node src/index.js",
+    "doctor": "node scripts/doctor.js",
+    "validate": "node scripts/validate.js"
   },
   "keywords": [
     "discord",
