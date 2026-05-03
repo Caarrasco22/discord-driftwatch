@@ -14,7 +14,9 @@ Driftwatch stores only the data needed to provide authorized defensive server au
 
 ## Data Not Stored
 
-Driftwatch does not store message content, direct messages, user tokens, passwords, IP addresses, or private credentials. Driftwatch does not request Message Content Intent or Guild Presences Intent.
+Driftwatch does not store message content, direct messages, user tokens, bot tokens, passwords, emails, IP addresses, raw audit log objects, full Discord object dumps, or private credentials. Driftwatch does not request Message Content Intent, Guild Presences Intent, or Guild Members Intent in v0.1/basic mode.
+
+Audit log analysis stores only derived findings, summaries, skipped checks, and report references in local SQLite. It does not store raw Discord audit log entries.
 
 ## Baselines And Findings
 

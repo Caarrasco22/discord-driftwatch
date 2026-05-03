@@ -89,7 +89,7 @@ DEFAULT_LANGUAGE=en
 - Use minimum permissions.
 - Do not enable Message Content intent.
 - Do not enable Guild Presences intent.
-- Do not enable Guild Members intent unless a future documented feature requires it.
+- Do not enable Guild Members intent for v0.1/basic mode.
 
 ## Minimum Permissions
 
@@ -136,11 +136,11 @@ npm run deploy-commands
 /driftwatch setup
 /driftwatch check
 /driftwatch logs
-/driftwatch report source:latest
-/driftwatch report source:current-risk
 /driftwatch baseline action:create
 /driftwatch baseline action:list
 /driftwatch baseline action:compare
+/driftwatch report source:latest
+/driftwatch report source:current-risk
 /driftwatch report source:baseline-compare
 /driftwatch report source:logs
 /driftwatch delete-data confirm:false
@@ -214,11 +214,11 @@ npm run deploy-commands
 - [ ] `/driftwatch setup` explains the review-first flow.
 - [ ] `/driftwatch check` returns a risk summary.
 - [ ] `/driftwatch logs` returns an audit log summary or a skipped-check explanation.
-- [ ] `/driftwatch report source:latest` returns or sends the latest report.
-- [ ] `/driftwatch report source:current-risk` returns or sends the latest current-risk report.
 - [ ] `/driftwatch baseline action:create` creates a baseline reference after review.
 - [ ] `/driftwatch baseline action:list` lists baselines.
 - [ ] `/driftwatch baseline action:compare` returns a comparison summary.
+- [ ] `/driftwatch report source:latest` returns or sends the latest report.
+- [ ] `/driftwatch report source:current-risk` returns or sends the latest current-risk report.
 - [ ] `/driftwatch report source:baseline-compare` returns or sends the latest baseline comparison report.
 - [ ] `/driftwatch report source:logs` returns or sends the latest logs report.
 - [ ] `/driftwatch delete-data confirm:false` does not delete data.

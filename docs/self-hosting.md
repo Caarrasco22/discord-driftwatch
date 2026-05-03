@@ -2,6 +2,17 @@
 
 Driftwatch can be self-hosted on a Linux server with Node.js.
 
+## Discord Developer Portal Setup
+
+1. Create or open an application in the Discord Developer Portal.
+2. Open the Bot page and create/reset the bot token.
+3. Copy the bot token into `DISCORD_TOKEN`.
+4. Copy the application/client ID into `DISCORD_CLIENT_ID`.
+5. For controlled testing, copy your test server ID into `DISCORD_GUILD_ID`. This is optional, but guild command deployment is much faster than global deployment.
+6. Invite the bot with the minimum permissions listed below.
+
+Do not enable Message Content Intent, Guild Presences Intent, or Guild Members Intent for v0.1/basic mode. Driftwatch does not read messages, use user tokens, or need privileged intents for the current release-candidate flow.
+
 ## First Install
 
 ```bash
@@ -87,6 +98,12 @@ Minimum bot permissions:
 
 Do not enable Message Content Intent, Guild Presences Intent, or Guild Members Intent for v0.1/basic mode.
 
+Optional permissions can improve specific checks when Discord exposes the data, but missing optional permissions should produce skipped or limited checks instead of crashing:
+
+- Manage Guild for deeper invite analysis when required.
+- Manage Webhooks for deeper webhook analysis when required.
+- Manage Channels only if you later configure a private report channel.
+
 ## First Use Flow
 
 After the bot is running and commands are deployed, use this order in Discord:
@@ -112,6 +129,21 @@ First review. Then set a reference. Then monitor changes.
 `update.sh` runs `git pull` and `npm install`. It runs `npm run deploy-commands` only when `.env` exists and includes `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`. It never overwrites `.env`.
 
 Restart the bot or systemd service after updating.
+
+For a conservative Debian/homelab update:
+
+```bash
+cd /opt/discord-driftwatch
+git pull
+npm install
+npm run doctor
+npm run validate
+sudo systemctl restart driftwatch
+sudo systemctl status driftwatch --no-pager
+journalctl -u driftwatch -n 100 --no-pager
+```
+
+Run `npm run deploy-commands` during updates only when slash command definitions changed.
 
 ## Scripts
 

@@ -224,15 +224,15 @@ Administrator is not required by default. Missing optional permissions should be
 
 ## Gateway Intents
 
-Required:
+Required in v0.1/basic mode:
 
 - Guilds
 
-Avoid:
+Do not enable for v0.1/basic mode:
 
 - Message Content
 - Guild Presences
-- Guild Members, unless a future documented feature clearly requires it.
+- Guild Members
 
 ## Data And Privacy
 

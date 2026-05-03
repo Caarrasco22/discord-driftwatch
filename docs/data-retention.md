@@ -2,6 +2,10 @@
 
 Driftwatch stores data locally in SQLite.
 
+Stored data is limited to Driftwatch settings, authorized role IDs, sanitized baselines, audit run summaries, derived findings, skipped checks, report message references, timestamps, and retention settings.
+
+Driftwatch does not store message content, DMs, tokens, passwords, emails, IP addresses, raw audit logs, full Discord object dumps, or unnecessary personal data.
+
 Default retention:
 
 - Findings: 30 days.

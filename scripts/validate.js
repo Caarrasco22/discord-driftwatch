@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const Module = require('module');
 
 const REQUIRED_FILES = [
   'src/index.js',
@@ -46,14 +46,16 @@ function main() {
   const root = process.cwd();
   const results = [];
   const jsFiles = listJavaScriptFiles(root);
+  const safetyScanFiles = jsFiles.filter((file) => relative(root, file) !== 'scripts/validate.js');
 
   checkPackageJson(root, results);
   checkRequiredFiles(root, results);
   checkSyntax(root, jsFiles, results);
   checkCommonJsLoads(root, results);
-  checkForbiddenStrings(root, jsFiles, results);
-  checkSafeToAutoFix(root, jsFiles, results);
-  checkRawAuditStorageHints(root, jsFiles, results);
+  // The validator defines forbidden strings as test data; safety scans target product code.
+  checkForbiddenStrings(root, safetyScanFiles, results);
+  checkSafeToAutoFix(root, safetyScanFiles, results);
+  checkRawAuditStorageHints(root, safetyScanFiles, results);
 
   printResults(results);
   const failed = results.some((item) => item.status === 'FAIL');
@@ -78,12 +80,13 @@ function checkRequiredFiles(root, results) {
 function checkSyntax(root, jsFiles, results) {
   let checked = 0;
   for (const file of jsFiles) {
-    const result = spawnSync(process.execPath, ['--check', file], {
-      cwd: root,
-      encoding: 'utf8'
-    });
-    if (result.status !== 0) {
-      add(results, 'FAIL', `syntax error: ${relative(root, file)}`, cleanOutput(result.stderr || result.stdout));
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      // Compile the CommonJS wrapper locally so validation does not need to spawn Node.
+      // This keeps CI and constrained local environments deterministic.
+      new Function(Module.wrap(content));
+    } catch (error) {
+      add(results, 'FAIL', `syntax error: ${relative(root, file)}`, cleanOutput(error && error.message ? error.message : error));
       continue;
     }
     checked += 1;
@@ -93,15 +96,12 @@ function checkSyntax(root, jsFiles, results) {
 
 function checkCommonJsLoads(root, results) {
   for (const modulePath of COMMONJS_MODULES) {
-    const result = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(modulePath)})`], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, DRIFTWATCH_VALIDATE: '1' }
-    });
-    if (result.status === 0) {
+    try {
+      process.env.DRIFTWATCH_VALIDATE = '1';
+      require(path.join(root, modulePath));
       add(results, 'PASS', `CommonJS load: ${modulePath}`);
-    } else {
-      add(results, 'FAIL', `CommonJS load failed: ${modulePath}`, cleanOutput(result.stderr || result.stdout));
+    } catch (error) {
+      add(results, 'FAIL', `CommonJS load failed: ${modulePath}`, cleanOutput(error && error.stack ? error.stack : error));
     }
   }
 }
