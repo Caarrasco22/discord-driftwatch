@@ -14,7 +14,8 @@ module.exports = {
   },
   reportNotes: {
     currentRisk: 'Current-risk reports detect risky current configuration using v0.1 heuristics.',
-    baselineCompare: 'Baseline-comparison reports detect changes against a stored baseline using v0.1 heuristics.',
+    baselineCompare: 'Baseline-comparison reports detect changes against a stored reference point using v0.1 heuristics. A baseline is not a security certification.',
+    logs: 'This report summarizes derived audit log signals. It does not contain raw logs or messages.',
     heuristic: 'This report uses heuristic checks and cached Discord configuration data. It is a triage aid, not a guarantee of complete security coverage.',
     noFindings: 'No findings were recorded for this run.',
     noRecommendations: 'No recommendations were recorded for this run.',

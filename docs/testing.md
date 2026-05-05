@@ -2,27 +2,66 @@
 
 ## Purpose
 
-This checklist is for testing the current Driftwatch v0.1 scaffold safely in a private Discord server before using it anywhere important.
+This checklist is for testing the current Driftwatch v0.1 flow safely in a private Discord server before using it anywhere important.
 
 The goal is to validate:
 
 - Bot login.
 - Slash command deployment.
 - SQLite initialization.
-- Baseline create/list.
+- Setup flow.
 - Current risk check.
+- Audit log analysis.
+- Baseline create/list.
 - Baseline compare.
 - Report generation.
 - Delete-data safety with `confirm:false`.
 
 ## Current Status
 
-Driftwatch is still early v0.1. The baseline/check/report foundation exists, but the project is not a finished security product yet.
+Driftwatch is still early v0.1. It is not a finished security product and does not certify that a Discord server is secure.
 
-- Audit log analysis is not implemented yet.
-- Impact analysis is not implemented yet.
+Implemented foundations:
+
+- Baseline create/list/compare.
+- Current risk checks in heuristic v0.1 form.
+- Safe audit log analysis in early v0.1 form.
+- Stored reports.
+- Data and delete-data flow.
+
+Still limited or experimental:
+
+- Impact analysis.
+- Advanced drift logic.
+- Markdown/PDF export.
+- Member-specific analysis.
 - Auto-fix is intentionally not implemented.
-- The bot should be tested only in a private/test server for now.
+
+## Recommended Test Flow
+
+Most servers are not perfectly configured when Driftwatch is installed. Do not create a baseline as proof that the server is safe. A baseline is only a reference point.
+
+1. Run `/driftwatch setup`.
+2. Run `/driftwatch check` to review current visible risks.
+3. Run `/driftwatch logs` to review recent administrative activity.
+4. Manually review and fix what matters.
+5. When the server is in an accepted state, run `/driftwatch baseline action:create`.
+6. Later, run `/driftwatch baseline action:compare` to detect drift from that accepted reference.
+
+First review. Then set a reference. Then monitor changes.
+
+## Flujo de prueba recomendado
+
+La mayoria de servidores no estan perfectamente configurados cuando instalas Driftwatch. No crees un baseline como si fuera una prueba de seguridad. Un baseline solo es una referencia del estado actual.
+
+1. Ejecuta `/driftwatch setup`.
+2. Ejecuta `/driftwatch check` para revisar riesgos actuales visibles.
+3. Ejecuta `/driftwatch logs` para revisar actividad administrativa reciente.
+4. Revisa y corrige manualmente lo importante.
+5. Cuando el servidor este en un estado aceptado, ejecuta `/driftwatch baseline action:create`.
+6. Mas adelante, usa `/driftwatch baseline action:compare` para detectar desviaciones respecto a esa referencia aceptada.
+
+Primero revisa. Luego fija una referencia. Despues vigila cambios.
 
 ## Required `.env` Values
 
@@ -50,7 +89,7 @@ DEFAULT_LANGUAGE=en
 - Use minimum permissions.
 - Do not enable Message Content intent.
 - Do not enable Guild Presences intent.
-- Do not enable Guild Members intent unless a future documented feature requires it.
+- Do not enable Guild Members intent for v0.1/basic mode.
 
 ## Minimum Permissions
 
@@ -71,6 +110,8 @@ Administrator is not required by default. Missing optional permissions should be
 
 ```bash
 npm install
+npm run validate
+npm run doctor
 npm run deploy-commands
 npm start
 ```
@@ -81,6 +122,8 @@ npm start
 chmod +x install.sh update.sh start.sh
 ./install.sh
 nano .env
+npm run validate
+npm run doctor
 npm run deploy-commands
 ./start.sh
 ```
@@ -91,13 +134,15 @@ npm run deploy-commands
 /driftwatch help
 /driftwatch data
 /driftwatch setup
+/driftwatch check
+/driftwatch logs
 /driftwatch baseline action:create
 /driftwatch baseline action:list
-/driftwatch check
 /driftwatch baseline action:compare
 /driftwatch report source:latest
 /driftwatch report source:current-risk
 /driftwatch report source:baseline-compare
+/driftwatch report source:logs
 /driftwatch delete-data confirm:false
 ```
 
@@ -106,19 +151,20 @@ npm run deploy-commands
 - Sensitive commands should reply ephemerally where appropriate.
 - `/driftwatch delete-data confirm:false` must not delete anything.
 - Missing optional permissions should be shown as skipped or limited checks.
+- Missing View Audit Log should skip logs analysis instead of crashing.
 - The bot must not read message content.
 - The bot must not modify server configuration.
 - The bot must not auto-fix anything.
 - `safeToAutoFix` must remain false.
 
-## What Is Still Placeholder
+## What Is Still Placeholder Or Limited
 
-- Audit log analysis.
 - Impact analysis.
 - Advanced drift engine.
 - Markdown/PDF export.
 - Member-specific analysis.
 - Auto-fix.
+- Audit log analysis is implemented, but still heuristic and limited by Discord audit log availability.
 
 ## Troubleshooting
 
@@ -150,7 +196,7 @@ npm run deploy-commands
 
 ### Missing Permissions
 
-- View Audit Log is needed for future audit log features.
+- View Audit Log is needed for `/driftwatch logs`.
 - Optional permissions should not crash the bot.
 - Skipped checks are expected if permissions are missing.
 
@@ -165,17 +211,20 @@ npm run deploy-commands
 - [ ] Slash commands appear in the test server.
 - [ ] `/driftwatch help` responds.
 - [ ] `/driftwatch data` explains stored data.
-- [ ] `/driftwatch baseline action:create` creates a baseline.
-- [ ] `/driftwatch baseline action:list` lists baselines.
+- [ ] `/driftwatch setup` explains the review-first flow.
 - [ ] `/driftwatch check` returns a risk summary.
+- [ ] `/driftwatch logs` returns an audit log summary or a skipped-check explanation.
+- [ ] `/driftwatch baseline action:create` creates a baseline reference after review.
+- [ ] `/driftwatch baseline action:list` lists baselines.
 - [ ] `/driftwatch baseline action:compare` returns a comparison summary.
 - [ ] `/driftwatch report source:latest` returns or sends the latest report.
 - [ ] `/driftwatch report source:current-risk` returns or sends the latest current-risk report.
 - [ ] `/driftwatch report source:baseline-compare` returns or sends the latest baseline comparison report.
+- [ ] `/driftwatch report source:logs` returns or sends the latest logs report.
 - [ ] `/driftwatch delete-data confirm:false` does not delete data.
 - [ ] No message content is read.
 - [ ] No server configuration is modified.
 
 ## Next Step After This Test
 
-If the test works, the next development step can be audit log analysis or impact analysis, but only after the baseline/check/report foundation is confirmed working.
+If the test works, the next development step can be improving impact analysis, report clarity, or advanced audit-log correlations. Keep changes defensive, authorized, and read-only.

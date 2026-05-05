@@ -2,6 +2,17 @@
 
 Driftwatch can be self-hosted on a Linux server with Node.js.
 
+## Discord Developer Portal Setup
+
+1. Create or open an application in the Discord Developer Portal.
+2. Open the Bot page and create/reset the bot token.
+3. Copy the bot token into `DISCORD_TOKEN`.
+4. Copy the application/client ID into `DISCORD_CLIENT_ID`.
+5. For controlled testing, copy your test server ID into `DISCORD_GUILD_ID`. This is optional, but guild command deployment is much faster than global deployment.
+6. Invite the bot with the minimum permissions listed below.
+
+Do not enable Message Content Intent, Guild Presences Intent, or Guild Members Intent for v0.1/basic mode. Driftwatch does not read messages, use user tokens, or need privileged intents for the current release-candidate flow.
+
 ## First Install
 
 ```bash
@@ -29,6 +40,22 @@ Install dependencies manually if needed:
 npm install
 ```
 
+Run the local setup doctor before deploying commands:
+
+```bash
+npm run doctor
+```
+
+`npm run doctor` checks the local setup only. It verifies Node.js, project files, dependencies, `.env`, required environment variables, and the SQLite database directory. It does not login to Discord, call Discord APIs, verify server permissions, or run database migrations.
+
+For development or contributions, you can also run:
+
+```bash
+npm run validate
+```
+
+`npm run validate` checks code syntax, CommonJS module loading, required files, and basic safety guards. It does not require `.env`, does not login to Discord, and does not deploy slash commands. Normal self-hosted users usually only need `npm run doctor`; `npm run validate` is mainly for developers and contributors checking code health.
+
 Register commands:
 
 ```bash
@@ -43,6 +70,56 @@ npm start
 
 By default, the SQLite database is stored at `./data/driftwatch.sqlite`. Runtime logs are written to the console and, when possible, appended to `./logs/driftwatch.log`.
 
+## Troubleshooting First
+
+If Driftwatch does not start or commands are not ready, run:
+
+```bash
+npm run doctor
+```
+
+Common results:
+
+- `FAIL dependency loaded`: run `npm install`.
+- `FAIL .env missing`: create it with `cp .env.example .env`.
+- `FAIL DISCORD_TOKEN missing`: add the bot token to `.env`. Never commit `.env`.
+- `FAIL DISCORD_CLIENT_ID missing`: add the application/client ID to `.env`.
+- `WARN DISCORD_GUILD_ID missing`: global commands may take longer. Add a test server ID for faster command deployment.
+- `FAIL Database directory is not writable`: create the directory or fix filesystem permissions.
+
+Doctor does not verify Discord server permissions. Check the bot invite separately.
+
+Minimum bot permissions:
+
+- View Channels
+- Send Messages
+- Embed Links
+- View Audit Log
+
+Do not enable Message Content Intent, Guild Presences Intent, or Guild Members Intent for v0.1/basic mode.
+
+Optional permissions can improve specific checks when Discord exposes the data, but missing optional permissions should produce skipped or limited checks instead of crashing:
+
+- Manage Guild for deeper invite analysis when required.
+- Manage Webhooks for deeper webhook analysis when required.
+- Manage Channels only if you later configure a private report channel.
+
+## First Use Flow
+
+After the bot is running and commands are deployed, use this order in Discord:
+
+```text
+/driftwatch setup
+/driftwatch check
+/driftwatch logs
+/driftwatch baseline action:create
+/driftwatch report source:latest
+```
+
+Create a baseline only after reviewing current visible risks and recent administrative activity. A baseline is a stored reference point, not proof that the server is secure.
+
+First review. Then set a reference. Then monitor changes.
+
 ## Updating From GitHub
 
 ```bash
@@ -52,6 +129,21 @@ By default, the SQLite database is stored at `./data/driftwatch.sqlite`. Runtime
 `update.sh` runs `git pull` and `npm install`. It runs `npm run deploy-commands` only when `.env` exists and includes `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`. It never overwrites `.env`.
 
 Restart the bot or systemd service after updating.
+
+For a conservative Debian/homelab update:
+
+```bash
+cd /opt/discord-driftwatch
+git pull
+npm install
+npm run doctor
+npm run validate
+sudo systemctl restart driftwatch
+sudo systemctl status driftwatch --no-pager
+journalctl -u driftwatch -n 100 --no-pager
+```
+
+Run `npm run deploy-commands` during updates only when slash command definitions changed.
 
 ## Scripts
 
