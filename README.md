@@ -1,5 +1,10 @@
 # Discord Driftwatch
 
+[![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-blue.svg)](https://nodejs.org)
+[![Discord.js](https://img.shields.io/badge/built%20with-Discord.js-5865F2.svg)](https://discord.js.org)
+[![Status](https://img.shields.io/badge/status-v0.1--dev-orange.svg)]()
+
 Driftwatch helps you detect when your Discord server is no longer as secure as you think it is.
 
 Driftwatch te ayuda a detectar cuándo tu servidor de Discord ya no es tan seguro como crees.
